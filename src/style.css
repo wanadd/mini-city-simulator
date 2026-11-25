@@ -255,4 +255,4 @@ input[type=range]{accent-color:#247967}
   .top-nav button{width:38px}
   .build-actions button{height:38px}
 }
-[data-night=true] .map-panel{background:#173742}
+.map-panel[data-night=true]{background:#173742}

@@ -15,6 +15,9 @@ const toolsList = [
 ] as const
 type Modal = 'stats' | 'share' | 'help' | 'demo' | 'new' | 'load'
 type Lighting = 'auto'|'day'|'night'
+const clearSharedAddress = () => {
+  if (location.hash.startsWith('#city=')) history.replaceState(null,'',location.pathname+location.search)
+}
 const rate = (current:number) => current===0?'Пауза':current===1?'Обычная скорость':current===2?'Двойная скорость':'Четверная скорость'
 
 function initialCity() {
@@ -103,6 +106,29 @@ export function App() {
   const close = useCallback(()=>setModal(null),[])
 
   useEffect(()=>{
+    const importLink = () => {
+      try {
+        const imported = readShare(location.hash)
+        if (!imported) return
+        setCity(imported)
+        setSelected(-1)
+        setTool('inspect')
+        setEdits([])
+        setSpeed(0)
+        setLighting('auto')
+        setModal(null)
+        setMenu(false)
+        setCommand(previous=>({type:'reset',seq:(previous?.seq ?? 0)+1}))
+        setNotice('Открыта независимая копия города.')
+      } catch {
+        setNotice('Не удалось открыть город по этой ссылке.')
+      }
+    }
+    window.addEventListener('hashchange',importLink)
+    return ()=>window.removeEventListener('hashchange',importLink)
+  },[])
+
+  useEffect(()=>{
     if (!speed || modal==='load'||modal==='new'||modal==='demo') return
     const timer = window.setInterval(()=>setCity(current=>advance(current)),6500/speed)
     return ()=>clearInterval(timer)
@@ -177,6 +203,7 @@ export function App() {
     setMenu(false)
     try {
       localStorage.setItem(SAVE_KEY,serialize(city))
+      clearSharedAddress()
       setNotice('Город сохранён в этом браузере.')
     } catch {
       setNotice('Браузер не разрешил сохранить город.')
@@ -197,7 +224,7 @@ export function App() {
       setTool('inspect')
       setSelected(-1)
       setLighting('auto')
-      if (location.hash.startsWith('#city=')) history.replaceState(null,'',location.pathname+location.search)
+      clearSharedAddress()
       moveCamera('reset')
       setNotice(kind==='demo'?'Демогород открыт.':kind==='load'?'Сохранение загружено.':'Новый город готов к строительству.')
     } catch {

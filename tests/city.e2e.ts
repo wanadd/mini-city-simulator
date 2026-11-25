@@ -156,6 +156,14 @@ test('save, load, reload, exact shared city in a fresh browser context',async({p
     await option(copy,'Сохранить').click()
     expect(await copy.evaluate(()=>localStorage.getItem('mini-city-v1'))).not.toBe(snapshot)
     expect(await page.evaluate(()=>localStorage.getItem('mini-city-v1'))).toBe(snapshot)
+    await copy.reload()
+    await option(copy,'Пауза').click()
+    await chooseCenter(copy)
+    await expect(plot(copy)).toContainText('Свободно')
+    await copy.evaluate(hash=>{location.hash=hash},new URL(share).hash)
+    await expect(copy.getByRole('status')).toContainText('Открыта независимая копия города')
+    await chooseCenter(copy)
+    await expect(plot(copy)).toContainText('Парк')
   } finally {
     await guest.close()
   }

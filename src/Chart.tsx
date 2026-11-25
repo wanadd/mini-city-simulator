@@ -1,7 +1,9 @@
 import {useState} from 'react'
 import type {Sample} from './simulation'
 
-export const number = (value:number) => new Intl.NumberFormat('ru-RU').format(value)
+const regular = new Intl.NumberFormat('ru-RU')
+const compact = new Intl.NumberFormat('ru-RU',{notation:'compact',maximumFractionDigits:1})
+export const number = (value:number) => regular.format(value)
 export const signed = (value:number) => (value >= 0 ? '+' : '−') + number(Math.abs(value))
 const series = {
   budget:{name:'Бюджет',unit:'₽',color:'#29977f'},
@@ -37,7 +39,7 @@ export function Chart({history,current}:{history:Sample[]; current:Sample}) {
       <defs><linearGradient id="plot-fill" x2="0" y2="1"><stop stopColor={key.color} stopOpacity=".23"/><stop offset="1" stopColor={key.color} stopOpacity=".025"/></linearGradient></defs>
       {[0,1,2,3].map(index => {
         const value = floor+step*index
-        return <g key={index}><line x1={plot.left} x2={plot.right} y1={y(value)} y2={y(value)} stroke="#e3e9e2"/><text x={plot.left-8} y={y(value)+4} textAnchor="end">{number(value)}</text></g>
+        return <g key={index}><line x1={plot.left} x2={plot.right} y1={y(value)} y2={y(value)} stroke="#e3e9e2"/><text x={plot.left-8} y={y(value)+4} textAnchor="end">{Math.abs(value)>999999 ? compact.format(value) : number(value)}</text></g>
       })}
       <text x={plot.left} y="176">Ход {first+1}</text>{first!==last && <text x={plot.right} y="176" textAnchor="end">{last+1}</text>}
       {data.length>1 && <path d={`${line} L${x(last)},${plot.bottom} L${x(first)},${plot.bottom} Z`} fill="url(#plot-fill)"/>}
