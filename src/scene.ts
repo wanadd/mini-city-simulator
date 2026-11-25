@@ -367,6 +367,29 @@ export class CityScene {
     this.frame = requestAnimationFrame(this.animate)
   }
 
+  capture():Promise<Blob> {
+    return new Promise((resolve,reject) => {
+      const canvas = this.renderer.domElement
+      if (this.renderer.getContext().isContextLost() || !canvas.width || !canvas.height) {
+        reject(new Error('3D scene is unavailable'))
+        return
+      }
+      const overlays = [this.grid,this.selection,this.cursor]
+      const visibility = overlays.map(object => object.visible)
+      overlays.forEach(object => {object.visible = false})
+      try {
+        // Capture in the same task as the render, before WebGL clears the drawing buffer.
+        this.renderer.render(this.scene,this.camera)
+        canvas.toBlob(blob => {
+          if (blob) resolve(blob)
+          else reject(new Error('PNG encoding failed'))
+        },'image/png')
+      } finally {
+        overlays.forEach((object,index) => {object.visible = visibility[index]})
+      }
+    })
+  }
+
   destroy() {
     cancelAnimationFrame(this.frame)
     this.observer.disconnect()

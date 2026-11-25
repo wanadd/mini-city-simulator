@@ -256,3 +256,14 @@ input[type=range]{accent-color:#247967}
   .build-actions button{height:38px}
 }
 .map-panel[data-night=true]{background:#173742}
+
+.map-light{display:flex;gap:6px}
+.map-light .snapshot-button svg{color:inherit}
+.screenshot-preview{display:block;width:100%;max-height:56svh;object-fit:contain;border-radius:10px;background:#163b3c}
+.screenshot-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:12px}
+.screenshot-actions a{text-decoration:none}
+.screenshot-actions a:focus-visible{outline-offset:3px}
+@media(max-width:720px){
+  .map-light .snapshot-button{min-width:36px;width:36px;height:35px;padding:0}
+  .snapshot-button span{display:none}
+}

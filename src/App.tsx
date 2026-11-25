@@ -1,5 +1,5 @@
-import {useCallback,useEffect,useMemo,useRef,useState,type KeyboardEvent,type ReactNode} from 'react'
-import {Activity,ArrowDownToLine,ArrowUpRight,BarChart3,BriefcaseBusiness,Building2,Check,ChevronDown,CircleHelp,Coins,Compass,Copy,Factory,Focus,FolderOpen,House,Leaf,Map,MapPin,Minus,Moon,MousePointer2,Pause,Play,Plus,Redo2,Save,Share2,Smile,Sun,Trees,TriangleAlert,Undo2,Users,X,Zap,Construction,Signpost,Globe2} from 'lucide-react'
+import {useCallback,useEffect,useMemo,useRef,useState,type KeyboardEvent,type ReactNode,type RefObject} from 'react'
+import {Activity,ArrowDownToLine,ArrowUpRight,BarChart3,BriefcaseBusiness,Building2,Camera,Check,ChevronDown,CircleHelp,Coins,Compass,Copy,Factory,Focus,FolderOpen,House,Leaf,Map,MapPin,Minus,Moon,MousePointer2,Pause,Play,Plus,Redo2,Save,Share2,Smile,Sun,Trees,TriangleAlert,Undo2,Users,X,Zap,Construction,Signpost,Globe2} from 'lucide-react'
 import {advance,at,BUILDINGS,coords,demoCity,editCity,emptyCity,measure,SIZE,undoEdit,type Building,type City,type Edit,type Tool} from './simulation'
 import {deserialize,readShare,SAVE_KEY,serialize,shareURL} from './persistence'
 import {Chart,number,signed} from './Chart'
@@ -13,7 +13,7 @@ const toolsList = [
   {id:'park',icon:Trees,color:'green',detail:'Зелень и отдых'},
   {id:'power',icon:Zap,color:'yellow',detail:'112 ед. мощности'},
 ] as const
-type Modal = 'stats' | 'share' | 'help' | 'demo' | 'new' | 'load'
+type Modal = 'stats' | 'share' | 'screenshot' | 'help' | 'demo' | 'new' | 'load'
 type Lighting = 'auto'|'day'|'night'
 const clearSharedAddress = () => {
   if (location.hash.startsWith('#city=')) history.replaceState(null,'',location.pathname+location.search)
@@ -36,9 +36,8 @@ function initialCity() {
   return {city:demoCity()}
 }
 
-function SceneView({settings,onPick,command}:{settings:SceneSettings;onPick:(index:number)=>void;command:{type:CameraCommand;seq:number}|null}) {
+function SceneView({settings,onPick,command,app}:{settings:SceneSettings;onPick:(index:number)=>void;command:{type:CameraCommand;seq:number}|null;app:RefObject<CityScene|null>}) {
   const container = useRef<HTMLDivElement>(null)
-  const app = useRef<CityScene|null>(null)
   const latest = useRef({settings,onPick})
   latest.current = {settings,onPick}
   const [failure,setFailure] = useState(false)
@@ -59,9 +58,9 @@ function SceneView({settings,onPick,command}:{settings:SceneSettings;onPick:(ind
       app.current = null
       delete host.dataset.ready
     }
-  },[attempt])
-  useEffect(()=>app.current?.update(settings),[settings])
-  useEffect(()=>{if(command) app.current?.command(command.type)},[command])
+  },[attempt,app])
+  useEffect(()=>app.current?.update(settings),[settings,app])
+  useEffect(()=>{if(command) app.current?.command(command.type)},[command,app])
   return <><div className="scene" ref={container}/>{failure && <div className="scene-error"><TriangleAlert/><strong>3D-карта недоступна</strong><span>Проверьте поддержку WebGL 2 и аппаратное ускорение.</span><button onClick={()=>{setFailure(false);setAttempt(value=>value+1)}}>Перезапустить карту</button></div>}</>
 }
 
@@ -77,6 +76,43 @@ function ModalBox({title,children,onClose}:{title:string;children:ReactNode;onCl
   </dialog>
 }
 
+function Screenshot({file}:{file:File}) {
+  const [url,setUrl] = useState('')
+  const [message,setMessage] = useState('')
+  const [sharing,setSharing] = useState(false)
+  const payload = {files:[file]}
+  const canShare = typeof navigator.share === 'function' && navigator.canShare?.(payload) === true
+
+  useEffect(()=>{
+    const preview = URL.createObjectURL(file)
+    setUrl(preview)
+    return ()=>URL.revokeObjectURL(preview)
+  },[file])
+
+  async function send() {
+    setMessage('')
+    setSharing(true)
+    try {
+      await navigator.share(payload)
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        setMessage('Не удалось открыть отправку. Скачайте PNG и прикрепите его к сообщению.')
+      }
+    } finally {
+      setSharing(false)
+    }
+  }
+
+  return <>
+    {url && <img className="screenshot-preview" alt="Снимок города" src={url}/>}
+    <div className="screenshot-actions">
+      {url && <a className={canShare?'top-button':'primary'} href={url} download={file.name}><ArrowDownToLine size={17}/> Скачать PNG</a>}
+      {canShare && <button className="primary" disabled={sharing} onClick={send}><Share2 size={17}/> Поделиться снимком</button>}
+    </div>
+    {message && <p role="status">{message}</p>}
+  </>
+}
+
 export function App() {
   const [initial] = useState(initialCity)
   const [city,setCity] = useState(initial.city)
@@ -86,6 +122,9 @@ export function App() {
   const [speed,setSpeed] = useState(initial.imported ? 0 : 1)
   const [lighting,setLighting] = useState<Lighting>('auto')
   const [modal,setModal] = useState<Modal|null>(null)
+  const [screenshot,setScreenshot] = useState<File|null>(null)
+  const [capturing,setCapturing] = useState(false)
+  const scene = useRef<CityScene|null>(null)
   const [menu,setMenu] = useState(false)
   const [notice,setNotice] = useState(initial.notice ?? (initial.imported ? 'Открыта независимая копия города.' : ''))
   const [link,setLink] = useState('')
@@ -103,7 +142,7 @@ export function App() {
     map:city.map,online:stats.online,selected,tool,light,speed,
     canBuild:tool==='inspect'||tool==='bulldoze'||city.budget>=BUILDINGS[tool].cost,
   }),[city.map,city.budget,stats.online,selected,tool,light,speed])
-  const close = useCallback(()=>setModal(null),[])
+  const close = useCallback(()=>{setModal(null);setScreenshot(null)},[])
 
   useEffect(()=>{
     const importLink = () => {
@@ -117,6 +156,7 @@ export function App() {
         setSpeed(0)
         setLighting('auto')
         setModal(null)
+        setScreenshot(null)
         setMenu(false)
         setCommand(previous=>({type:'reset',seq:(previous?.seq ?? 0)+1}))
         setNotice('Открыта независимая копия города.')
@@ -232,6 +272,23 @@ export function App() {
     }
   }
 
+  async function capture() {
+    if (!scene.current) {
+      setNotice('Снимок будет доступен после загрузки карты.')
+      return
+    }
+    setCapturing(true)
+    try {
+      const blob = await scene.current.capture()
+      setScreenshot(new File([blob],'mini-city.png',{type:'image/png'}))
+      setModal('screenshot')
+    } catch {
+      setNotice('Не удалось сделать снимок. Попробуйте ещё раз после загрузки карты.')
+    } finally {
+      setCapturing(false)
+    }
+  }
+
   function openShare() {
     setLink(shareURL(city,location.href))
     setCopied(false)
@@ -305,10 +362,11 @@ export function App() {
       <div className="workspace">
         <section className="map-panel" data-night={light<.5} aria-label="Карта города">
           <div className="map-focus" tabIndex={0} role="region" aria-label="Управление картой" aria-describedby="map-help" onKeyDown={keys}>
-            <SceneView settings={settings} onPick={pick} command={command}/>
+            <SceneView settings={settings} onPick={pick} command={command} app={scene}/>
           </div>
           <div className="map-heading"><span className="compass-tile"><Compass size={21}/></span><div><strong>Карта города</strong><span>20 × 20 клеток</span></div></div>
           <div className="map-light">
+            <button className="snapshot-button" title="Снимок города" aria-label="Снимок города" disabled={capturing} onClick={capture}><Camera size={18}/><span>Снимок</span></button>
             <button title="Сменить освещение" aria-label="Сменить освещение" onClick={()=>setLighting(current=>current==='auto'?'night':current==='night'?'day':'auto')}>
               {light<.5?<Moon size={16}/>:<Sun size={17}/>}<span>{lighting==='auto'?'Авто':lighting==='night'?'Ночь':'День'}</span>
             </button>
@@ -379,8 +437,11 @@ export function App() {
       <label className="share-label" htmlFor="share-url">Ссылка на город</label>
       <div className="share-field"><input id="share-url" ref={shareField} readOnly value={link} onFocus={event=>event.target.select()}/><button className="primary" onClick={copy}>{copied?<Check size={17}/>:<Copy size={17}/>} {copied?'Скопировано':'Копировать'}</button></div>
     </ModalBox>}
+    {modal==='screenshot' && screenshot && <ModalBox title="Снимок города" onClose={close}>
+      <Screenshot file={screenshot}/>
+    </ModalBox>}
     {modal==='help' && <ModalBox title="Как играть" onClose={close}>
-      <ol className="help-list"><li><b>Подключите район.</b> Проложите дороги от края острова. Здания должны примыкать к этой сети.</li><li><b>Дайте энергию.</b> Подключите электростанцию к дороге района. Жильё получает энергию первым, затем торговля и заводы. Паркам питание не требуется.</li><li><b>Развивайте город.</b> Рабочие места и парки помогают росту. Заводы загрязняют воздух, а высокий налог снижает довольство.</li><li><b>Управляйте камерой.</b> Потяните карту для поворота. На компьютере используйте колесо и правую кнопку, на телефоне — щипок и сдвиг двумя пальцами. С клавиатуры выбирайте клетку стрелками и применяйте инструмент клавишей Enter.</li></ol>
+      <ol className="help-list"><li><b>Подключите район.</b> Проложите дороги от края острова. Здания должны примыкать к этой сети.</li><li><b>Дайте энергию.</b> Подключите электростанцию к дороге района. Жильё получает энергию первым, затем торговля и заводы. Паркам питание не требуется.</li><li><b>Развивайте город.</b> Рабочие места и парки помогают росту. Заводы загрязняют воздух, а высокий налог снижает довольство.</li><li><b>Управляйте камерой.</b> Потяните карту для поворота. На компьютере используйте колесо и правую кнопку, на телефоне — щипок и сдвиг двумя пальцами. С клавиатуры выбирайте клетку стрелками и применяйте инструмент клавишей Enter.</li><li><b>Сделайте снимок.</b> Кнопка с камерой над картой сохраняет текущий вид города в PNG.</li></ol>
     </ModalBox>}
     {(modal==='new'||modal==='demo'||modal==='load') && <ModalBox title={modal==='new'?'Начать новый город?':modal==='demo'?'Открыть демогород?':'Загрузить сохранение?'} onClose={close}>
       <p>Текущий город будет заменён. Чтобы сохранить его, сначала нажмите «Сохранить».</p>
